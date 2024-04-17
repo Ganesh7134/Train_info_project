@@ -470,7 +470,3 @@ page_functions = {
     "PNR Status": PNR_Status
 }
 page_functions[menu_options[selected]]()
-
-
-    
-
