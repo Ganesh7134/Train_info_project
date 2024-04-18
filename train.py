@@ -9,12 +9,14 @@ from deep_translator import GoogleTranslator
 from streamlit_option_menu import option_menu
 from streamlit_lottie import st_lottie
 import json
-
-
-
-
-
-
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import CountVectorizer
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+import nltk
+from time import sleep
+import speech_recognition
 
 # Set headless mode (optional)
 options = webdriver.ChromeOptions()
@@ -40,7 +42,51 @@ def  get_train_data():
         key[i] = key[i].replace(" ","-")
         res = (key[i]+"-"+val[i]).lower()
         stat.append(res)
+
+    # Download stopwords data
+    nltk.download('stopwords')
+    nltk.download('punkt')
+
+    # Get the English stopwords list
+    stop_words = set(stopwords.words('english'))
+    def remove_stopwords(text):
+        # Tokenize the text
+        words = word_tokenize(text)
+        # Remove stopwords
+        filtered_words = [word for word in words if word.lower() not in stop_words]
+        # Join the filtered words back into a string
+        filtered_text = ' '.join(filtered_words)
+        return filtered_text
     
+
+
+    def text_input_similarity(input_text, station_list, threshold=0.6):
+        similarities = []
+        # Remove stopwords from input_text
+        input_text_processed = remove_stopwords(input_text)
+        if not input_text_processed:
+            return None  # Return None if input text is empty after removing stopwords
+        # Initialize CountVectorizer
+        vectorizer = CountVectorizer()
+        # Fit and transform the input text
+        input_vector = vectorizer.fit_transform([input_text_processed])
+        if input_vector.shape[1] == 0:
+            return None  # Return None if input text contains no meaningful words
+        for station in station_list:
+            # Remove stopwords from station name
+            station_processed = remove_stopwords(station)
+            # Transform the station name
+            station_vector = vectorizer.transform([station_processed])
+            # Calculate cosine similarity
+            similarity = cosine_similarity(station_vector, input_vector)
+            similarities.append(similarity)
+        max_similarity = max(similarities)
+        if max_similarity >= threshold:
+            index = similarities.index(max_similarity)
+            return station_list[index]
+        else:
+            return None
+
     # Load the animation outside the Streamlit loop and cache it
     @st.cache_data(ttl=60 * 60)
     def load_lottie_file(filepath : str):
@@ -56,27 +102,117 @@ def  get_train_data():
 
     st.markdown("<h1 style='text-align: center; color: #008080;'><u>Check the train availability</u></h1>", unsafe_allow_html=True)
     st.markdown("""---""")
-    col1,col2,col3,col4 = st.columns(4)
-    with col1:
-        From = st.selectbox("🚇 "+"From: ",stat)
 
-    with col2:
-        To = st.selectbox("🚇 "+"To: ",stat) 
+    # Add container for input type selection
+    st.warning("after entering details please wait few minutes to fetch details")
+    input_type_container = st.container()
+    with input_type_container:
+        input_type = st.radio("Input Type:", ("Text Input", "Speech Input"))
 
-    with col3:
-        D = st.date_input("🗓️ "+"Select travel date: ")
-        Date = D.strftime("%d-%m-%Y")
-    with col4:
-        quota = st.selectbox("🚇 "+"select the quota type : ",list(dic.keys()))
+    col1, col2, col3, col4 = st.columns(4)
+    if input_type == "Text Input":
+        
+        with col1:
+            user_input_from = st.text_input("Enter From Station Name:")
+            selected_station_from = text_input_similarity(user_input_from.lower(), stat)
+            if selected_station_from:
+                From = st.selectbox("🚇 From: ", [selected_station_from])
+            else:
+                st.warning("From station not found. Please try again.")
+        
+        with col2:
+            user_input_to = st.text_input("Enter To Station Name:")
+            selected_station_to = text_input_similarity(user_input_to.lower(), stat)
+            if selected_station_to:
+                To = st.selectbox("🚇 To: ", [selected_station_to])
+            else:
+                st.warning("To station not found. Please try again.")
+        with col3:
+            D = st.date_input("🗓️ Select travel date: ")
+            Date = D.strftime("%d-%m-%Y")
+        
+        with col4:
+            quota = st.selectbox("🚇 Select the quota type:", list(dic.keys()))
+    elif input_type == "Speech Input":
+        From = []
+        To = []
+        def takeCommand():
+            """
+            Initializes a speech recognizer (r) and sets up microphone access.
+
+            Prints "Listening..." to indicate the start of listening for speech.
+
+            Adjusts recognition parameters:
+                r.pause_threshold = 1: Allows up to 1 second of silence before considering speech complete.
+                r.energy_threshold = 300: Sets the minimum audio energy level for speech detection.
+            
+            Listens for 4 seconds of audio from the microphone and stores it in the audio variable."""
+            st.warning("Don't worry the function will until audio recognised by the speech_recogniser")
+            r = speech_recognition.Recognizer()
+            with speech_recognition.Microphone() as source:
+                r.pause_threshold = 1
+                r.energy_threshold = 4500
+                audio = r.listen(source,0,4)
+
+                try:
+                    with st.chat_message("assistant"):
+                        st.markdown("Listening...")
+                    sleep(0.5)
+                    with st.chat_message("assistant"):
+                        st.markdown("understanding...")
+                    query = r.recognize_google(audio,language = "en-IN")
+                    
+                    sleep(0.5)
+                    with st.chat_message("assistant"):
+                        li = query.split()
+                        From.append(li[li.index("from")+1])
+                        To.append(li[-1])
+                        if From or To:
+                            st.success("Successfully get the from and to station details through audio 🎉")
+                except Exception as e:
+                    st.write("Say that again")
+                    return takeCommand() # if any mistake happens then recursive function will call again...
+                return query # if it understands then it returns output
+            
+        but = st.button("click here to listen...",use_container_width=True)
+        if but:
+            takeCommand()
+            
+        with col1:
+            if len(From) != 0:
+                user_input_from = st.text_input("Enter From Station Name:",value = From[0])
+                selected_station_from = text_input_similarity(user_input_from.lower(), stat)
+                if selected_station_from:
+                    From = st.selectbox("🚇 From: ", [selected_station_from])
+                else:
+                    st.warning("From station not found. Please try again.")
+        
+        with col2:
+            if len(To) != 0:
+                user_input_to = st.text_input("Enter To Station Name:",value = To[0])
+                selected_station_to = text_input_similarity(user_input_to.lower(), stat)
+                if selected_station_to:
+                    To = st.selectbox("🚇 To: ", [selected_station_to])
+                else:
+                    st.warning("To station not found. Please try again.")
+        with col3:
+            D = st.date_input("🗓️ Select travel date: ")
+            Date = D.strftime("%d-%m-%Y")
+        
+        with col4:
+            quota = st.selectbox("🚇 Select the quota type:", list(dic.keys()))
+
+    
+
     try:
         url = f"https://www.trainman.in/trains/{From}/{To}?date={Date}&class=ALL&quota={quota}"
     except:
-        st.error("Sorry trains data unavailable")
+        st.error("Data is empty please select from and to stations")
 
     try:
         driver.get(url)
     except:
-        st.error("Sorry trains data unavailable")
+        st.error("URL is empty please select station details")
 
     D3 = []
     train_number = driver.find_elements(By.CSS_SELECTOR, "span[class='tcode f-poppins-semibold']")
@@ -470,3 +606,7 @@ page_functions = {
     "PNR Status": PNR_Status
 }
 page_functions[menu_options[selected]]()
+
+
+    
+
