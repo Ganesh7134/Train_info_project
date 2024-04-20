@@ -133,6 +133,7 @@ def  get_train_data():
         
         with col4:
             quota = st.selectbox("🚇 Select the quota type:", list(dic.keys()))
+            
     elif input_type == "Speech Input":
         From = []
         To = []
@@ -143,36 +144,38 @@ def  get_train_data():
             Prints "Listening..." to indicate the start of listening for speech.
 
             Adjusts recognition parameters:
-                r.pause_threshold = 1: Allows up to 1 second of silence before considering speech complete.
-                r.energy_threshold = 300: Sets the minimum audio energy level for speech detection.
+                r.pause_threshold = 0.5: Allows up to 0.5 seconds of silence before considering speech complete.
+                r.energy_threshold = 4000: Sets the minimum audio energy level for speech detection.
             
-            Listens for 4 seconds of audio from the microphone and stores it in the audio variable."""
-            st.warning("Don't worry the function will until audio recognised by the speech_recogniser")
+            Listens for 4 seconds of audio from the microphone and stores it in the audio variable.
+            """
+            st.warning("Don't worry the function will wait until audio is recognized by the speech recognizer")
             r = speech_recognition.Recognizer()
             with speech_recognition.Microphone() as source:
-                r.pause_threshold = 1
-                r.energy_threshold = 4500
-                audio = r.listen(source,0,4)
+                r.pause_threshold = 0.5  # Reduce pause threshold for faster response
+                r.energy_threshold = 4000  # Adjust energy threshold
+                audio = r.listen(source, 4)  # Listen for 4 seconds of audio
 
-                try:
-                    with st.chat_message("assistant"):
-                        st.markdown("Listening...")
-                    sleep(0.5)
-                    with st.chat_message("assistant"):
-                        st.markdown("understanding...")
-                    query = r.recognize_google(audio,language = "en-IN")
-                    
-                    sleep(0.5)
-                    with st.chat_message("assistant"):
-                        li = query.split()
-                        From.append(li[li.index("from")+1])
-                        To.append(li[-1])
-                        if From or To:
-                            st.success("Successfully get the from and to station details through audio 🎉")
-                except Exception as e:
-                    st.write("Say that again")
-                    return takeCommand() # if any mistake happens then recursive function will call again...
-                return query # if it understands then it returns output
+            try:
+                with st.chat_message("assistant"):
+                    st.markdown("Listening...")
+                query = r.recognize_google(audio, language="en-IN")
+
+                with st.chat_message("assistant"):
+                    st.markdown("Understanding...")
+                sleep(0.5)  # Pause briefly to indicate processing
+
+                li = query.split()
+                From.append(li[li.index("from") + 1])  # Assuming From and To are global lists
+                To.append(li[-1])
+
+                st.success("Successfully obtained the from and to station details through audio 🎉")
+            except Exception as e:
+                st.write("Sorry, I didn't catch that. Could you please repeat?")
+                return takeCommand()  # Retry if there's an exception
+
+            return query  # Return the recognized query
+
             
         but = st.button("click here to listen...",use_container_width=True)
         if but:
